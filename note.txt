@@ -1,0 +1,303 @@
+const User = require('../models/user');
+const bcrypt = require('bcrypt');
+const { check, validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken');
+
+module.exports = {
+    resgisterUser: [
+        //Validate 
+        check('email', 'Vui lòng nhập địa chỉ email hợp lệ.').isEmail(),
+        check('username', 'Vui lòng nhập tên đăng nhập.').not().isEmpty(),
+        check('password', 'Vui lòng nhập mật khẩu có ít nhất 6 ký tự.').isLength({ min: 6 }),
+
+        async (req, res) => {
+            // Kiểm tra lỗi
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    message: errors.array()
+                });
+            }
+
+            const { username, email, password, posts, role, image } = req.body;
+
+            try {
+                // Kiểm tra xem email đã tồn tại chưa
+                let result = await User.findOne({ email });
+                if (result) {
+                    return res.status(400).json({
+                        message: 'Tài khoản với địa chỉ email này đã tồn tại'
+                    });
+                }
+
+                // Mã hóa mật khẩu
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+                result = await User.create({
+                    username,
+                    email,
+                    password: hashedPassword,
+                    posts,
+                    role,
+                    image
+                });
+
+                return res.status(201).json({
+                    data: result,
+                });
+
+            } catch (err) {
+                console.log(err);
+            }
+        }
+    ],
+
+
+
+    loginUser: [
+        //Validate 
+        check('email', 'Please include a valid email').isEmail(),
+        check('password', 'Password is required').exists(),
+
+        async (req, res) => {
+            // Check for errors
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    message: errors.array()
+                });
+            }
+
+            const { email, password } = req.body;
+            try {
+                let result = await User.findOne({ email });
+
+
+
+                if (!result) {
+                    return res.status(400).json({
+                        message: 'Invalid credentials'
+                    });
+                }
+
+                // Validate user password
+                const isValidPassword = await bcrypt.compare(password, result.password);
+
+                if (!isValidPassword) {
+                    return res.status(401).json({ message: 'Invalid credentials' });
+                }
+
+                const payload = {
+                    user: {
+                        id: result.id,
+                    }
+                };
+
+                // Generate and send token
+                const token = jwt.sign(
+                    payload,
+                    'my-secret-key',
+                    { expiresIn: '1h' }
+                );
+
+                return res.status(200).json({
+                    data: {
+                        access_token: token,
+                        username: result.username,
+                        email: result.email,
+                        post: result.posts,
+                        role: result.role,
+                        image: result.image,
+                    },
+                    errorCode: 0,
+                    errorMessage: 'Login Success!'
+                })
+            } catch (err) {
+                console.log(err);
+            }
+        }
+    ],
+
+
+
+    getAllUser: async (req, res) => {
+        try {
+            let result = await User.find().populate(req.query.populate);
+
+            return res.status(200).json({
+                errorCode: 0,
+                data: result
+            })
+        } catch (error) {
+            console.log(error);
+        }
+    },
+
+
+    updateUser: async (req, res) => {
+        try {
+            let { id, username, email, password, posts, role, image } = req.body;
+            const hashedPassword = await bcrypt.hash(password, 10);
+            let result = await User.updateOne(
+                { _id: id },
+                {
+                    username,
+                    email,
+                    password: hashedPassword,
+                    posts,
+                    role,
+                    image
+                });
+            return res.status(200).json({
+                errorCode: 0,
+                data: result
+            })
+        } catch (error) {
+            console.log(error);
+        }
+    },
+
+
+
+    deleteUser: async (req, res) => {
+        try {
+            let { id } = req.body;
+            let result = await User.deleteOne({ _id: id });
+            return res.status(200).json({
+                errorCode: 0,
+                data: result
+            })
+        } catch (error) {
+            console.log(error);
+        }
+    },
+
+}
+
+
+
+const Post = require('../models/post');
+const User = require('../models/user');
+const { check, validationResult } = require('express-validator');
+
+module.exports = {
+    createPost: async (req, res) => {
+        let { title, content, status, author } = req.body;
+        try {
+            let result = await Post.create({
+                title, content, status, author
+            });
+
+            let user = await User.findById(author)
+            user.posts.push(result._id);
+            console.log(user);
+            await user.save();
+
+            return res.status(200).json({
+                errorCode: 0,
+                data: result
+            })
+        } catch (error) {
+            console.log(error);
+        }
+    },
+
+    // getAllUser: async (req, res) => {
+    //     try {
+    //         let result = await User.find();
+    //         return res.status(200).json({
+    //             errorCode: 0,
+    //             data: result
+    //         })
+    //     } catch (error) {
+    //         console.log(error);
+    //     }
+    // },
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+
+// Thiết lập cho Express sử dụng JSON body parser
+app.use(express.json());
+
+// Dữ liệu của người dùng được lưu trữ trong một mảng trong bộ nhớ
+const users = [
+  { id: 1, username: 'user1', password: 'password1' },
+  { id: 2, username: 'user2', password: 'password2' },
+];
+
+// Khóa bí mật được sử dụng để tạo JWT
+const secretKey = 'your_secret_key';
+
+
+// API để xử lý đăng nhập
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  const user = users.find(
+    (u) => u.username === username && u.password === password
+  );
+  if (!user) {
+    return res.status(401).json();
+  }
+
+  // Tạo JWT token
+  const token = jwt.sign({ sub: user.id }, secretKey, { expiresIn: '1h' });
+
+  // Trả về token cho client
+  res.json({ token });
+});
+
+// API bảo vệ đòi hỏi xác thực
+app.get('/protected', (req, res) => {
+  // Lấy token từ header của request
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ message: 'Không tìm thấy token trong header' });
+  }
+
+  try {
+    // Xác thực token
+    const decoded = jwt.verify(token, secretKey);
+    const userId = decoded.sub;
+
+    // Lấy thông tin người dùng từ ID của người dùng
+    const user = users.find((u) => u.id === userId);
+
+    if (!user) {
+      return res.status(401).json({ message: 'Token không hợp lệ' });
+    }
+
+    // Trả về dữ liệu được bảo vệ
+    res.json({ data: 'Đây là dữ liệu được bảo vệ' });
+  } catch (error) {
+    return res.status(401).json({ message: 'Token không hợp lệ' });
+  }
+});
+
+const port = 3000;
+app.listen(port, () => console.log(Server đang lắng nghe trên cổng ${port}));
